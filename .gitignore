@@ -1,0 +1,42 @@
+# Python
+venv/
+env/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+temp_images/
+*.log
+
+# Excel temp files
+~$*.xls*
+~$*.xlsm
+
+# Data files
+data/*.csv
+data/*.xlsx
+data/*.json
+data/*.db
+data/*.sqlite3
+data/*.h5
+data/*.pdf
+
