@@ -40,3 +40,6 @@ data/*.sqlite3
 data/*.h5
 data/*.pdf
 
+# Screenshots
+screenshots/
+
