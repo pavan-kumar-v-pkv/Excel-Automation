@@ -11,13 +11,13 @@ from .config import Config
 class KohlerPDFParser:
     """Parse Kohler pricebook PDF to extract SKU and image coordinates."""
 
-    def __init__(self, pdf_path: str):
+    def __init__(self, pdf_path: str, config=None):
         """
-        Initialize parser with PDF apth
+        Initialize parser with PDF path
 
         Args:
             pdf_path: Path to Kohler pricebook PDF
-            config: Configuration object for customisation
+            config: Configuration object for customization
         """
         self.pdf_path = pdf_path
         self.config = config or Config()
@@ -178,7 +178,7 @@ class KohlerPDFParser:
         Clean and validate SKU code
 
         Args:
-            sku_values: Raw SKU value from table
+            sku_value: Raw SKU value from table
 
         Returns:
             Cleaned SKU or None
@@ -191,7 +191,7 @@ class KohlerPDFParser:
         # Remove common prefixes/suffixes
         sku = sku.replace('\n', ' ').strip()
 
-        # Basic valdiation
+        # Basic validation
         if not self._is_valid_sku(sku):
             return None
         
@@ -227,7 +227,7 @@ class KohlerPDFParser:
         Args:
             row: Table row
 
-        Return:
+        Returns:
             True if this is a reference row to skip
         """
         row_text = ' '.join([str(cell) for cell in row if cell]).upper()
