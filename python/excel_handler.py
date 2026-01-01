@@ -232,27 +232,30 @@ class ExcelHandler:
             True if inserted successfully, False otherwise
         """
         try:
+            from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+            from openpyxl.utils.units import pixels_to_EMU
+            
             # Create Excel image object
             img = XLImage(image_path)
-            
-            # Resize to fit cell (assuming standard row height)
+            # Resize to fit cell
             img.width = self.config.IMAGE_TARGET_SIZE[0]
             img.height = self.config.IMAGE_TARGET_SIZE[1]
+
+            # Adjust row height and column width to fit image (100x100)
+            sheet.row_dimensions[row].height = 100 * 1.1
+            col_letter = get_column_letter(col)
+            # Excel column width is approx. 1/6th of pixel width
+            sheet.column_dimensions[col_letter].width = 100 / 6
             
-            # Get cell reference
-            cell_ref = f"{get_column_letter(col)}{row}"
-            
-            # Anchor image to cell
-            img.anchor = cell_ref
+            # Center image in cell with offset (5 pixels from top and left)
+            offset_pixels = 5
+            marker = AnchorMarker(col=col-1, colOff=pixels_to_EMU(offset_pixels), row=row-1, rowOff=pixels_to_EMU(offset_pixels))
+            img.anchor = OneCellAnchor(_from=marker, ext=None)
             
             # Add image to sheet
             sheet.add_image(img)
-            
-            # Adjust row height to fit image
-            sheet.row_dimensions[row].height = self.config.IMAGE_TARGET_SIZE[1] * 0.75
-            
+
             return True
-            
         except Exception as e:
             print(f"      Error inserting image at {get_column_letter(col)}{row}: {str(e)}")
             return False

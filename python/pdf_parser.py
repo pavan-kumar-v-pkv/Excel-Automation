@@ -318,14 +318,15 @@ class KohlerPDFParser:
             
         return False
     
-    def _find_nearest_image(self, row_idx: int, images: List[dict], total_rows: int) -> Optional[dict]:
+    def _find_nearest_image(self, row_idx: int, images: List[dict], total_rows: int, table_bbox: dict = None) -> Optional[dict]:
         """
-        Find image nearest to the current row
+        Find image nearest to the current row based on Y-coordinates
 
         Args:
             row_idx: Current row index
             images: List of images on the page
             total_rows: Total rows in table
+            table_bbox: Optional bounding box of the table for spatial reference
 
         Returns:
             Image bounding box or None
@@ -333,17 +334,36 @@ class KohlerPDFParser:
         if not images:
             return None
         
-        # Simple strategy: assume one image per row or product
-        # For more complex layouts, this needs spatial analysis
-
-        # If we have as many images as rows, map 1:1
-        if len(images) >= total_rows and row_idx <= len(images):
-            return images[row_idx - 1]
+        # Sort images by their Y position (top coordinate)
+        sorted_images = sorted(images, key=lambda img: img.get('top', 0))
         
-        # Otherwise, return first available image
-        # TODO: Implement proper row-to-image matching based on Y-coordinates
-        if images:
-            return images[0]
+        # If we have as many or more images as data rows (excluding header),
+        # try to map by position in the sorted list
+        data_rows = total_rows - 1  # Exclude header row
+        
+        if len(sorted_images) >= data_rows and row_idx <= len(sorted_images):
+            # row_idx is 1-based for data rows, so row_idx-1 gives us 0-based index
+            return sorted_images[row_idx - 1]
+        
+        # If fewer images than rows, try to find the closest image by estimating
+        # the Y-position of this row
+        if len(sorted_images) > 0 and data_rows > 0:
+            # Calculate approximate Y position for this row
+            # Assume images span the page somewhat evenly
+            first_img_top = sorted_images[0].get('top', 0)
+            last_img_top = sorted_images[-1].get('top', first_img_top)
+            
+            if len(sorted_images) > 1:
+                # Estimate where this row's image should be
+                row_fraction = (row_idx - 1) / max(data_rows - 1, 1)
+                estimated_y = first_img_top + row_fraction * (last_img_top - first_img_top)
+                
+                # Find closest image to estimated Y position
+                closest_img = min(sorted_images, key=lambda img: abs(img.get('top', 0) - estimated_y))
+                return closest_img
+            else:
+                # Only one image, return it
+                return sorted_images[0]
         
         return None
     

@@ -11,17 +11,19 @@ class SummaryBuilder:
     Build summary sheet from data sheets
     """
 
-    def __init__(self, workbook, config=None):
+    def __init__(self, workbook, config=None, data_workbook=None):
         """
         Initialize summary builder
 
         Args:
             workbook: openpyxl workbook object
             config: Configuration object
+            data_workbook: openpyxl workbook opened with data_only=True for formula results
         """
         from .config import Config
 
         self.workbook = workbook
+        self.data_workbook = data_workbook
         self.config = config or Config()
         self.summary_data = []
 
@@ -85,16 +87,52 @@ class SummaryBuilder:
         if not total_row_idx:
             return None
         
-        # Extract values from total row
-        row_values = list(sheet.iter_rows(
-            min_row=total_row_idx,
-            max_row=total_row_idx,
-            values_only=True
-        ))[0]
-
-        # Find MRP and Offer Price Columns
-        mrp_value = self._extract_numeric_value(row_values, 'mrp')
-        offer_value = self._extract_numeric_value(row_values, 'offer')
+        # Try to get values from data_workbook first (for already calculated formulas)
+        mrp_value = None
+        offer_value = None
+        
+        if self.data_workbook and sheet_name in self.data_workbook.sheetnames:
+            data_sheet = self.data_workbook[sheet_name]
+            mrp_value = data_sheet.cell(row=total_row_idx, column=7).value
+            offer_value = data_sheet.cell(row=total_row_idx, column=9).value
+        
+        # If values are still None (formulas not calculated), calculate manually by summing the column
+        if mrp_value is None:
+            mrp_value = 0
+            # Sum column G (Total Amount = F * E) from row 4 to total_row - 1
+            # Since column G has formulas, calculate from F (MRP) * E (Qty)
+            for row_idx in range(4, total_row_idx):
+                mrp = sheet.cell(row=row_idx, column=6).value  # Column F = MRP
+                qty = sheet.cell(row=row_idx, column=5).value  # Column E = Qty
+                if isinstance(mrp, (int, float)) and isinstance(qty, (int, float)):
+                    mrp_value += mrp * qty
+        
+        if offer_value is None:
+            offer_value = 0
+            # Sum column I (Total Offer Price = H * E) from row 4 to total_row - 1
+            # Since column I has formulas, calculate from H (Offer Price) * E (Qty)
+            for row_idx in range(4, total_row_idx):
+                offer = sheet.cell(row=row_idx, column=8).value  # Column H = Offer Price
+                qty = sheet.cell(row=row_idx, column=5).value  # Column E = Qty
+                if isinstance(offer, (int, float)) and isinstance(qty, (int, float)):
+                    offer_value += offer * qty
+        
+        # Convert to numeric if needed
+        if mrp_value and isinstance(mrp_value, str):
+            try:
+                mrp_value = float(mrp_value.replace('₹', '').replace('$', '').replace(',', '').strip())
+            except:
+                mrp_value = None
+        elif isinstance(mrp_value, (int, float)):
+            mrp_value = float(mrp_value)
+        
+        if offer_value and isinstance(offer_value, str):
+            try:
+                offer_value = float(offer_value.replace('₹', '').replace('$', '').replace(',', '').strip())
+            except:
+                offer_value = None
+        elif isinstance(offer_value, (int, float)):
+            offer_value = float(offer_value)
 
         return {
             'sheet_name': sheet_name,
@@ -181,28 +219,107 @@ class SummaryBuilder:
         Args:
             sheet: Summary worksheet
         """
-        # Write headers
-        headers = ['Sheet Name', 'Total MRP', 'Total Offer Price']
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        
+        # Clear existing data first
+        sheet.delete_rows(1, sheet.max_row)
+        
+        # Set column widths
+        sheet.column_dimensions['A'].width = 10
+        sheet.column_dimensions['B'].width = 25
+        sheet.column_dimensions['C'].width = 15
+        sheet.column_dimensions['D'].width = 15
+        
+        # Define styles
+        header_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        header_font = Font(bold=True)
+        center_align = Alignment(horizontal='center', vertical='center')
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Write headers (row 1)
+        headers = ['Sr. No', 'Sheet Name', 'MRP', 'OFFER PRICE']
         for col_idx, header in enumerate(headers, start=1):
             cell = sheet.cell(row=1, column=col_idx)
             cell.value = header
-            cell.font = openpyxl.styles.Font(bold=True)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center_align
+            cell.border = border
         
-        # Write data
+        # Write data rows
+        total_mrp = 0
+        total_offer = 0
         for row_idx, data in enumerate(self.summary_data, start=2):
-            sheet.cell(row=row_idx, column=1).value = data['sheet_name']
-            sheet.cell(row=row_idx, column=2).value = data.get('mrp')
-            sheet.cell(row=row_idx, column=3).value = data.get('offer')
+            # Sr. No
+            cell = sheet.cell(row=row_idx, column=1)
+            cell.value = row_idx - 1
+            cell.alignment = center_align
+            cell.border = border
+            
+            # Sheet Name
+            cell = sheet.cell(row=row_idx, column=2)
+            cell.value = data['sheet_name']
+            cell.border = border
+            
+            # MRP
+            mrp_val = data.get('mrp') or 0
+            cell = sheet.cell(row=row_idx, column=3)
+            cell.value = mrp_val
+            cell.number_format = '#,##0'
+            cell.alignment = Alignment(horizontal='right')
+            cell.border = border
+            total_mrp += mrp_val if isinstance(mrp_val, (int, float)) else 0
+            
+            # Offer Price
+            offer_val = data.get('offer') or 0
+            cell = sheet.cell(row=row_idx, column=4)
+            cell.value = offer_val
+            cell.number_format = '#,##0'
+            cell.alignment = Alignment(horizontal='right')
+            cell.border = border
+            total_offer += offer_val if isinstance(offer_val, (int, float)) else 0
         
-        # Auto-size columns
-        for col in sheet.columns:
-            max_length = 0
-            column = col[0].column_letter
-            for cell in col:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = (max_length + 2)
-            sheet.column_dimensions[column].width = adjusted_width
+        # Add TOTAL MRP row
+        total_row = len(self.summary_data) + 2
+        cell = sheet.cell(row=total_row, column=2)
+        cell.value = 'TOTAL MRP'
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.border = border
+        
+        cell = sheet.cell(row=total_row, column=3)
+        cell.value = total_mrp
+        cell.number_format = '#,##0'
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='right')
+        cell.border = border
+        
+        cell = sheet.cell(row=total_row, column=4)
+        cell.value = total_offer
+        cell.number_format = '#,##0'
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='right')
+        cell.border = border
+        
+        # Add FINAL OFFER VALUE row
+        final_row = total_row + 2
+        cell = sheet.cell(row=final_row, column=2)
+        cell.value = 'FINAL OFFER VALUE ( INCL GST )'
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.border = border
+        
+        cell = sheet.cell(row=final_row, column=3)
+        cell.value = total_offer
+        cell.number_format = '#,##0'
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='right')
+        cell.border = border

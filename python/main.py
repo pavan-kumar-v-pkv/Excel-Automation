@@ -7,6 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 from tkinter import Tk, filedialog
+import openpyxl
 
 from .config import Config
 from .pdf_parser import KohlerPDFParser
@@ -167,10 +168,13 @@ class ExcelAutomation:
             print("\n STEP 1: Opening Excel file...")
             excel = ExcelHandler(excel_path, self.config)
             excel.open()
+            
+            # Also open with data_only=True to read formula results
+            wb_data_only = openpyxl.load_workbook(excel_path, data_only=True)
 
             # Step 2: Build summary sheet
             print("\n STEP 2: Building summary sheet...")
-            summary_builder = SummaryBuilder(excel.workbook, self.config)
+            summary_builder = SummaryBuilder(excel.workbook, self.config, data_workbook=wb_data_only)
             success = summary_builder.build_summary()
 
             if not success:
