@@ -10,6 +10,8 @@ from PIL import Image
 import pdfplumber
 import io
 
+from .pdf_parser import normalize_sku
+
 class ImageExtractor:
     """Extract and resize images from PDF"""
 
@@ -69,8 +71,10 @@ class ImageExtractor:
                     image_path = self._extract_single_image(page, sku, image_bbox, page_num)
 
                     if image_path:
-                        image_paths[sku] = image_path
-                        print(f"   ✓ {sku}")
+                        # Use normalized SKU as key for matching with Excel
+                        sku_norm = normalize_sku(sku)
+                        image_paths[sku_norm] = image_path
+                        print(f"   ✓ {sku} -> {sku_norm}")
                 except Exception as e:
                     print(f"   ✗ {sku}: {str(e)}")
 
@@ -93,12 +97,17 @@ class ImageExtractor:
         try:
             # Method 1: Try to extract image directly from pdfplumber image object
             if 'stream' in image_info:
-                return self._extract_from_stream(image_info, sku)
+                result = self._extract_from_stream(image_info, sku)
+                if result:
+                    return result
+                # Fall through to crop method if stream extraction fails
 
             # Method 2: Crop page region and convert to image
             bbox = self._get_bbox_coordinates(image_info)
             if bbox:
-                return self._extract_from_crop(page, sku, bbox)
+                result = self._extract_from_crop(page, sku, bbox)
+                if result:
+                    return result
             
             # Method 3: try to get first image on page
             return self._extract_first_image(page, sku, page_num)
@@ -116,20 +125,40 @@ class ImageExtractor:
             # Try to get image data
             image_data = stream.get_data()
             pil_image = Image.open(io.BytesIO(image_data))
+            
+            # Load image fully into memory to avoid "broken data stream" errors
+            # This is necessary for JPX/JPEG2000 images that use lazy loading
+            pil_image.load()
 
             # Resize and save
             resized = self._resize_image(pil_image)
             output_path = self._save_image(resized, sku)
 
             return output_path
-        except:
+        except Exception as e:
+            # Silently fail - let other methods try
             return None
         
     def _extract_from_crop(self, page, sku: str, bbox: tuple) -> Optional[str]:
         """Extract image by cropping page region"""
         try:
+            # Clamp bbox coordinates to valid page boundaries
+            page_width = float(page.width)
+            page_height = float(page.height)
+            
+            x0 = max(0.0, min(float(bbox[0]), page_width))
+            y0 = max(0.0, min(float(bbox[1]), page_height))
+            x1 = max(0.0, min(float(bbox[2]), page_width))
+            y1 = max(0.0, min(float(bbox[3]), page_height))
+            
+            # Ensure valid dimensions
+            if x1 <= x0 or y1 <= y0:
+                return None
+            
+            clamped_bbox = (x0, y0, x1, y1)
+            
             # Crop the page to bbox
-            cropped = page.crop(bbox)
+            cropped = page.crop(clamped_bbox)
 
             # Convert to image
             img = cropped.to_image(resolution=150)
@@ -187,37 +216,44 @@ class ImageExtractor:
     
     def _resize_image(self, image: Image.Image) -> Image.Image:
         """
-        Resize image to standard size while maintaining aspect ratio
+        Resize image to standard size while maintaining aspect ratio and transparency
+        
         Args:
             image: PIL Image object
-
+            
         Returns:
             Resized image
         """
-        # Convertt to RGB if necessary
-        if image.mode in ('RGBA', 'LA', 'P'):
-            # Convert white background:
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
-            image = background
-        elif image.mode != 'RGB':
-            image = image.convert('RGB')
-
+        # Keep transparency if present
+        has_transparency = image.mode in ('RGBA', 'LA', 'P')
+        
+        if image.mode == 'P':
+            image = image.convert('RGBA')
+        elif image.mode not in ('RGBA', 'LA', 'RGB'):
+            image = image.convert('RGBA' if has_transparency else 'RGB')
+        
         # Create thumbnail (maintains aspect ratio)
         image.thumbnail(self.target_size, Image.Resampling.LANCZOS)
-
-        # Create white background of target size
-        background = Image.new('RGB', self.target_size, (255, 255, 255))
-
+        
+        # Create transparent or white background based on original
+        if has_transparency or image.mode == 'RGBA':
+            # Keep transparency - use RGBA with transparent background
+            background = Image.new('RGBA', self.target_size, (255, 255, 255, 0))  # Transparent
+        else:
+            # Use white background
+            background = Image.new('RGB', self.target_size, (255, 255, 255))
+        
         # Center the image on background
         offset = (
             (self.target_size[0] - image.width) // 2,
             (self.target_size[1] - image.height) // 2
         )
-
-        background.paste(image, offset)
+        
+        if image.mode == 'RGBA':
+            background.paste(image, offset, image)  # Use alpha channel as mask
+        else:
+            background.paste(image, offset)
+        
         return background
     
     def _save_image(self, image: Image.Image, sku: str) -> str:

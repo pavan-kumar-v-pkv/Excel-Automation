@@ -66,6 +66,8 @@ class ExcelAutomation:
             if not sku_map:
                 print(" No SKUs found in PDF")
                 return False
+            # Export normalized PDF SKUs to file
+            self._export_pdf_skus(sku_map)
             
             # Step 2: Extract images from PDF
             print("\n STEP 2: Extracting images from PDF...")
@@ -83,11 +85,14 @@ class ExcelAutomation:
 
             # Scan Excel for SKU codes
             excel.scan_skus()
+            # Export normalized Excel SKUs to file
+            self._export_excel_skus(excel.sheet_sku_map)
 
             # Step 4: Insert images into Excel
             print("\n STEP 4: Inserting images into Excel...")
             inserted_count = excel.insert_images(image_paths)
-            
+            # Show comparison of missing SKUs
+            self._print_missing_sku_report(excel.sheet_sku_map, image_paths)
             # Step 5: Save Excel file
             excel.save()
             excel.close()
@@ -105,6 +110,39 @@ class ExcelAutomation:
             import traceback
             traceback.print_exc()
             return False
+
+    def _export_pdf_skus(self, sku_map):
+        """Export normalized PDF SKUs and image info to a text file"""
+        out_path = "data/pdf_skus_export.txt"
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("SKU\tNormalized\tHasImage\tImagePage\tImageBBox\n")
+                for sku, data in sku_map.items():
+                    norm = self._normalize_sku(sku)
+                    has_img = str(data.get("has_image", False))
+                    page = str(data.get("image_page", ""))
+                    bbox = str(data.get("image_bbox", ""))
+                    f.write(f"{sku}\t{norm}\t{has_img}\t{page}\t{bbox}\n")
+            print(f" Exported PDF SKUs to {out_path}")
+        except Exception as e:
+            print(f" Error exporting PDF SKUs: {e}")
+
+    def _export_excel_skus(self, sheet_sku_map):
+        """Export normalized Excel SKUs (with sheet info) to a text file"""
+        out_path = "data/excel_skus_export.txt"
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("Sheet\tRow\tSKU\tNormalized\n")
+                for sheet, skus in sheet_sku_map.items():
+                    for row, sku_raw, sku_norm in skus:
+                        f.write(f"{sheet}\t{row}\t{sku_raw}\t{sku_norm}\n")
+            print(f" Exported Excel SKUs to {out_path}")
+        except Exception as e:
+            print(f" Error exporting Excel SKUs: {e}")
+
+    def _normalize_sku(self, sku):
+        from .pdf_parser import normalize_sku
+        return normalize_sku(sku)
         
     def create_summary(self, excel_path: str) -> bool:
         """
@@ -157,6 +195,38 @@ class ExcelAutomation:
             traceback.print_exc()
             return False
         
+    def _print_missing_sku_report(self, sheet_sku_map, image_paths):
+        """Print report of SKUs missing images"""
+        print("\n" + "=" * 60)
+        print("📊 MISSING IMAGE REPORT")
+        print("=" * 60)
+        
+        all_excel_skus = set()
+        missing_skus = []
+        
+        for sheet_name, skus in sheet_sku_map.items():
+            for _, sku_raw, sku_norm in skus:
+                all_excel_skus.add((sku_norm, sku_raw))
+                if sku_norm not in image_paths and sku_norm not in ['SKUCODE', 'TOTALVALUE']:
+                    missing_skus.append((sku_norm, sku_raw, sheet_name))
+        
+        pdf_skus = set(image_paths.keys())
+        
+        print(f"\n📈 Statistics:")
+        print(f"   Total unique SKUs in Excel: {len(all_excel_skus)}")
+        print(f"   SKUs with images from PDF: {len(pdf_skus)}")
+        print(f"   SKUs missing images: {len(missing_skus)}")
+        
+        if missing_skus:
+            print(f"\n❌ Missing SKUs (first 20):")
+            for sku_norm, sku_raw, sheet in missing_skus[:20]:
+                print(f"   {sku_raw:30} (normalized: {sku_norm:25}) in [{sheet}]")
+            
+            if len(missing_skus) > 20:
+                print(f"   ... and {len(missing_skus) - 20} more")
+        
+        print("=" * 60)
+    
     def _select_pdf_file(self) -> str:
         """
         Show file picker to select PDF file

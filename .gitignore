@@ -39,6 +39,7 @@ data/*.db
 data/*.sqlite3
 data/*.h5
 data/*.pdf
+data/*.txt
 
 # Screenshots
 screenshots/

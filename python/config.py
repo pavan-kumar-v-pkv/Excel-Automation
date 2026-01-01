@@ -33,7 +33,7 @@ class Config:
     ]
     
     # Image settings
-    IMAGE_TARGET_SIZE: tuple = (100, 100)  # Width, Height in pixels
+    IMAGE_TARGET_SIZE: tuple = (75, 75)  # Width, Height in pixels
     IMAGE_FORMAT: str = 'PNG'
     TEMP_IMAGE_DIR: str = 'temp_images'
     

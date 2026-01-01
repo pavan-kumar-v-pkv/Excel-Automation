@@ -8,6 +8,17 @@ import re
 from typing import Dict, List, Tuple, Optional
 from .config import Config
 
+def normalize_sku(sku: str) -> str:
+    """Normalize SKU code by stripping whitespace and converting to uppercase"""
+    if not sku:
+        return ""
+    sku = str(sku).strip().replace(' ', '').replace('-', '').replace('_', '').replace('/', '').upper()
+    if sku.startswith('K'):
+        # Remove leading 'K' if followed by digits
+        if len(sku) > 1 and sku[1].isdigit():
+            sku = sku[1:]
+    return sku
+
 class KohlerPDFParser:
     """Parse Kohler pricebook PDF to extract SKU and image coordinates."""
 
@@ -41,6 +52,9 @@ class KohlerPDFParser:
             print(f"Error parsing PDF: {e}")
             raise
 
+        print("SKUs with images found in PDF (normalized):")
+        for sku in self.sku_image_map.keys():
+            print(sku)
         print(f" Found {len(self.sku_image_map)} SKUs with images.")
         return self._build_result_map()
     
@@ -127,29 +141,38 @@ class KohlerPDFParser:
             if not row or len(row) <= code_col_idx:
                 continue
 
-            sku_code = self._clean_sku(row[code_col_idx])
-
-            if not sku_code:
+            raw_sku_cell = row[code_col_idx]
+            if not raw_sku_cell:
                 continue
-
-            # Store SKU data
-            sku_data = {
-                'sku': sku_code,
-                'description': row[desc_col_idx] if desc_col_idx and len(row) > desc_col_idx else '',
-                'mrp': row[mrp_col_idx] if mrp_col_idx and len(row) > mrp_col_idx else '',
-                'page': page_num,
-                'row_index': row_idx
-            }
-
-            # Try to find associated image
-            image_bbox = self._find_nearest_image(row_idx, images, len(table))
             
-            if image_bbox:
-                self.sku_image_map[sku_code] = (page_num, image_bbox)
-                self.sku_data_map[sku_code] = sku_data
-            else:
-                # Store SKU even without image
-                self.sku_data_map[sku_code] = sku_data
+            # Extract all SKUs from the cell (handles concatenated SKUs)
+            sku_codes = self._extract_all_skus(str(raw_sku_cell))
+            
+            for sku_code_raw in sku_codes:
+                sku_code = normalize_sku(sku_code_raw)
+
+                if not sku_code:
+                    continue
+
+                # Store SKU data
+                sku_data = {
+                    'sku': sku_code_raw,
+                    'sku_normalized': sku_code,
+                    'description': row[desc_col_idx] if desc_col_idx and len(row) > desc_col_idx else '',
+                    'mrp': row[mrp_col_idx] if mrp_col_idx and len(row) > mrp_col_idx else '',
+                    'page': page_num,
+                    'row_index': row_idx
+                }
+
+                # Try to find associated image
+                image_bbox = self._find_nearest_image(row_idx, images, len(table))
+                
+                if image_bbox:
+                    self.sku_image_map[sku_code] = (page_num, image_bbox)
+                    self.sku_data_map[sku_code] = sku_data
+                else:
+                    # Store SKU even without image
+                    self.sku_data_map[sku_code] = sku_data
 
     def _find_column_index(self, header_row: List, possible_names: List[str]) -> Optional[int]:
         """
@@ -181,7 +204,7 @@ class KohlerPDFParser:
             sku_value: Raw SKU value from table
 
         Returns:
-            Cleaned SKU or None
+            Cleaned SKU or None (returns first valid SKU if multiple are concatenated)
         """
         if not sku_value:
             return None
@@ -190,12 +213,68 @@ class KohlerPDFParser:
 
         # Remove common prefixes/suffixes
         sku = sku.replace('\n', ' ').strip()
+        
+        # Try to split concatenated SKUs (e.g., "75890INPCPK75890INMCP")
+        # Look for pattern where a "K" followed by digits indicates a new Kohler SKU
+        split_pattern = r'(K-?\d+[A-Z0-9-]+)'
+        matches = re.findall(split_pattern, sku, re.IGNORECASE)
+        if matches and len(matches) >= 1:
+            # Return the first valid SKU found
+            for match in matches:
+                if self._is_valid_sku(match):
+                    return match
 
         # Basic validation
         if not self._is_valid_sku(sku):
             return None
         
         return sku
+    
+    def _extract_all_skus(self, sku_value: str) -> List[str]:
+        """
+        Extract all SKUs from a cell value (handles concatenated SKUs)
+
+        Args:
+            sku_value: Raw SKU value from table
+
+        Returns:
+            List of valid SKU codes found
+        """
+        if not sku_value:
+            return []
+        
+        sku = str(sku_value).strip().replace('\n', ' ').strip()
+        skus = []
+        
+        # Pattern to match Kohler SKU format: K-XXXXX or just XXXXX where X is alphanumeric
+        # Kohler SKUs typically look like: K-75890IN-M-CP or 75890IN-M-CP
+        # Also handle patterns like: 75890INPCP, 20746INCP, etc.
+        
+        # First try to split by common Kohler SKU pattern (K followed by digits)
+        # This handles "75890INPCPK75890INMCP" -> ["K75890INMCP"] 
+        k_pattern = r'K-?\d+[A-Z0-9-]*(?:IN|T)[A-Z0-9-]*'
+        k_matches = re.findall(k_pattern, sku, re.IGNORECASE)
+        
+        if k_matches:
+            for match in k_matches:
+                if self._is_valid_sku(match):
+                    skus.append(match)
+        
+        # Also try to find SKUs that don't start with K but have the IN pattern
+        # like "75890INPCP", "20746INCP"
+        in_pattern = r'\d+IN[A-Z0-9-]*'
+        in_matches = re.findall(in_pattern, sku, re.IGNORECASE)
+        
+        if in_matches:
+            for match in in_matches:
+                if self._is_valid_sku(match) and match not in skus:
+                    skus.append(match)
+        
+        # If no matches found, try the original value
+        if not skus and self._is_valid_sku(sku):
+            skus.append(sku)
+        
+        return skus
     
     def _is_valid_sku(self, sku: str) -> bool:
         """

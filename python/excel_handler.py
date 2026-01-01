@@ -9,6 +9,8 @@ from openpyxl.utils import get_column_letter
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
+from .pdf_parser import normalize_sku
+
 class ExcelHandler:
     """Handle Excel file operations"""
 
@@ -92,6 +94,14 @@ class ExcelHandler:
                 print(f"    {sheet_name}: Found {len(skus)} SKUs")
 
         self.sheet_sku_map = sku_locations
+
+        all_excel_skus = set()
+        for sheet, skus in sku_locations.items():
+            for _, _, sku_norm in skus:
+                all_excel_skus.add(sku_norm)
+        print("SKUs in Excel (normalized):")
+        for sku in sorted(all_excel_skus):
+            print(sku)
         return sku_locations
     
     def _scan_sheet_for_skus(self, sheet) -> List[Tuple[int, str]]:
@@ -122,7 +132,9 @@ class ExcelHandler:
             if len(row) >= code_col_idx:
                 sku_value = row[code_col_idx - 1]
                 if sku_value and self._is_valid_sku(str(sku_value)):
-                    skus.append((row_idx, str(sku_value).strip()))
+                    sku_raw = str(sku_value).strip()
+                    sku_norm = normalize_sku(sku_raw)
+                    skus.append((row_idx, sku_raw, sku_norm))
 
         return skus
     
@@ -164,16 +176,20 @@ class ExcelHandler:
                 continue
 
             # Insert images for each SKU
-            for row_num, sku in skus:
-                if sku in image_paths:
+            for row_num, sku_raw, sku_norm in skus:
+                if sku_norm in image_paths:
+                    print(f"Will insert image for SKU: {sku_raw} (normalized: {sku_norm})")
                     success = self._insert_image_at_cell(
                         sheet,
                         row_num,
                         image_col_idx,
-                        image_paths[sku]
+                        image_paths[sku_norm]
                     )
                     if success:
                         inserted_count += 1
+                        print(f"      ✓ Inserted at row {row_num}, col {image_col_idx}")
+                else:
+                    print(f"NO IMAGE FOR SKU: {sku_raw} (normalized: {sku_norm})")
 
             print(f"    {sheet_name}: Inserted {inserted_count} images so far")
         print(f"Total images inserted: {inserted_count}")
