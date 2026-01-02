@@ -34,6 +34,7 @@ temp_images/
 # Data files
 data/*.csv
 data/*.xlsx
+data/*.xlsm
 data/*.json
 data/*.db
 data/*.sqlite3

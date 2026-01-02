@@ -49,7 +49,18 @@ class SummaryBuilder:
         # Write summary data
         self._write_summary(summary_sheet)
 
-        print(f"Summary sheet update with {len(self.summary_data)} entries")
+        print(f"Summary sheet updated with {len(self.summary_data)} entries")
+        
+        # Check if all values are 0 (formulas not calculated)
+        if all(d.get('mrp') == 0 and d.get('offer') == 0 for d in self.summary_data):
+            print("\n⚠️  WARNING: All MRP and Offer values are 0.")
+            print("   This usually means formulas haven't been calculated.")
+            print("   Please:")
+            print("   1. Open this Excel file in Microsoft Excel")
+            print("   2. Click 'Enable Content' or 'Update Links' when prompted")
+            print("   3. Save the file (Ctrl+S / Cmd+S)")
+            print("   4. Run create-summary again")
+        
         return True
     
     def _collect_sheet_totals(self):
@@ -96,7 +107,12 @@ class SummaryBuilder:
             mrp_value = data_sheet.cell(row=total_row_idx, column=7).value
             offer_value = data_sheet.cell(row=total_row_idx, column=9).value
         
-        # If values are still None (formulas not calculated), calculate manually by summing the column
+        # If values are still None, formulas haven't been calculated by Excel yet
+        if mrp_value is None or offer_value is None:
+            print(f"    ⚠️  {sheet_name}: Formulas not calculated. Please open Excel file, let formulas calculate, and Save.")
+            # Return 0 values so summary is created but with placeholder values
+            mrp_value = mrp_value or 0
+            offer_value = offer_value or 0
         if mrp_value is None:
             mrp_value = 0
             # Sum column G (Total Amount = F * E) from row 4 to total_row - 1
