@@ -18,14 +18,16 @@ from .summary_builder import SummaryBuilder
 class ExcelAutomation:
     """Main automation orchestrator"""
 
-    def __init__(self, config: Config = None):
+    def __init__(self, config: Config = None, progress_callback=None):
         """
         Initialize automation
         
         Args:
             config: Optional configuration object
+            progress_callback: Optional callback function(current, total, message)
         """
         self.config = config or Config()
+        self.progress_callback = progress_callback
 
     def fill_images_from_pdf(self, excel_path: str, pdf_path: str = None) -> bool:
         """
@@ -81,7 +83,7 @@ class ExcelAutomation:
             
             # Step 3: Open Excel and scan for SKUs
             print("\n STEP 3: Scanning Excel for SKUs...")
-            excel = ExcelHandler(excel_path, self.config)
+            excel = ExcelHandler(excel_path, self.config, self.progress_callback)
             excel.open()
 
             # Scan Excel for SKU codes

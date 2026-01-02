@@ -14,12 +14,13 @@ from .pdf_parser import normalize_sku
 class ExcelHandler:
     """Handle Excel file operations"""
 
-    def __init__(self, excel_path: str, config=None):
+    def __init__(self, excel_path: str, config=None, progress_callback=None):
         """
         Initialize Excel handler
         Args:
             excel_path: Path to Excel file
             config: Configuration object
+            progress_callback: Optional callback function(current, total, message)
         """
         from .config import Config
 
@@ -27,12 +28,24 @@ class ExcelHandler:
         self.config = config or Config()
         self.workbook = None
         self.sheet_sku_map = {} # {sheet_name: {row: sku}}
+        self.progress_callback = progress_callback
 
     def open(self):
         """Open Excel workbook"""
         print(f"\n Opening Excel: {self.excel_path}")
         try:
-            self.workbook = openpyxl.load_workbook(self.excel_path)
+            # Check if file has macros (.xlsm) to determine if we need keep_vba
+            is_macro_enabled = self.excel_path.lower().endswith('.xlsm')
+            
+            # Only use keep_vba=True for .xlsm files to preserve macros
+            # Using it on .xlsx files can cause corruption
+            if is_macro_enabled:
+                self.workbook = openpyxl.load_workbook(self.excel_path, keep_vba=True)
+                print(f"    Loaded with VBA preservation (macro-enabled file)")
+            else:
+                self.workbook = openpyxl.load_workbook(self.excel_path)
+                print(f"    Loaded as standard Excel file")
+            
             print(f"    Found {len(self.workbook.sheetnames)} sheets")
         except Exception as e:
             print(f"    Error opening Excel: {str(e)}")
@@ -164,6 +177,10 @@ class ExcelHandler:
         """
         print(f"\n Inserting images into Excel...")
         inserted_count = 0
+        
+        # Calculate total SKUs for progress tracking
+        total_skus = sum(len(skus) for skus in self.sheet_sku_map.values())
+        processed_skus = 0
 
         for sheet_name, skus in self.sheet_sku_map.items():
             sheet = self.workbook[sheet_name]
@@ -190,6 +207,11 @@ class ExcelHandler:
                         print(f"      ✓ Inserted at row {row_num}, col {image_col_idx}")
                 else:
                     print(f"NO IMAGE FOR SKU: {sku_raw} (normalized: {sku_norm})")
+                
+                # Report progress
+                processed_skus += 1
+                if self.progress_callback:
+                    self.progress_callback(processed_skus, total_skus, f"Processing SKU {processed_skus}/{total_skus}")
 
             print(f"    {sheet_name}: Inserted {inserted_count} images so far")
         print(f"Total images inserted: {inserted_count}")
@@ -232,25 +254,20 @@ class ExcelHandler:
             True if inserted successfully, False otherwise
         """
         try:
-            from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
-            from openpyxl.utils.units import pixels_to_EMU
-            
             # Create Excel image object
             img = XLImage(image_path)
-            # Resize to fit cell
+            
+            # Use config size (100x100)
             img.width = self.config.IMAGE_TARGET_SIZE[0]
             img.height = self.config.IMAGE_TARGET_SIZE[1]
 
-            # Adjust row height and column width to fit image (100x100)
-            sheet.row_dimensions[row].height = 100 * 1.1
+            # Make cell larger than image for padding
+            sheet.row_dimensions[row].height = 110  # Slightly larger than 100
             col_letter = get_column_letter(col)
-            # Excel column width is approx. 1/6th of pixel width
-            sheet.column_dimensions[col_letter].width = 100 / 6
+            sheet.column_dimensions[col_letter].width = 18  # Wider cell
             
-            # Center image in cell with offset (5 pixels from top and left)
-            offset_pixels = 5
-            marker = AnchorMarker(col=col-1, colOff=pixels_to_EMU(offset_pixels), row=row-1, rowOff=pixels_to_EMU(offset_pixels))
-            img.anchor = OneCellAnchor(_from=marker, ext=None)
+            # Use simple cell anchor
+            img.anchor = f"{col_letter}{row}"
             
             # Add image to sheet
             sheet.add_image(img)
