@@ -27,6 +27,15 @@ class KohlerImageAutomationGUI:
         self.root.resizable(True, True)
         self.root.configure(bg="#f5f7fa")
         
+        # Set app icon
+        icon_path = Path(__file__).parent.parent / "assets" / "kohler_icon.png"
+        if icon_path.exists():
+            try:
+                icon = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(True, icon)
+            except:
+                pass  # If icon fails to load, just use default
+        
         # Set minimum window size
         self.root.minsize(800, 650)
 
