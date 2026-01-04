@@ -48,10 +48,9 @@
 
 1. Open your Excel quotation file
 2. Press `Alt+F11` (opens VBA Editor)
-3. Right-click on your workbook name → Insert → Module
-4. Copy the code from `Excel Macro - Summary Generator.txt`
-5. Paste it into the module window
-6. Save and close VBA Editor
+3. In the menu: **File → Import File...**
+4. Select **GenerateSummary.bas** from the Kohler Image Tool folder
+5. Save and close VBA Editor
 
 ### Every Time You Use:
 

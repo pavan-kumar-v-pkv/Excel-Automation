@@ -44,9 +44,13 @@ This folder contains:
 
 Want to auto-generate summary sheets in Excel?
 
-1. Open **Excel Macro - Summary Generator.txt**
-2. Follow the instructions in **Instructions.md**
-3. Run the macro in Excel whenever needed
+1. Open your Excel file with images
+2. Press Alt+F11 (opens VBA Editor)
+3. File → Import File → Select **GenerateSummary.bas**
+4. Close VBA Editor and save
+5. Press Alt+F8 → Run "GenerateSummary"
+
+See **Instructions.md** for detailed steps.
 
 ---
 

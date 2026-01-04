@@ -35,15 +35,18 @@ Sub GenerateSummary()
         summarySheet.Cells.Clear
     End If
     
-    ' Set up headers
+    ' Copy Kohler logo from first sheet
+    CopyKohlerLogo wb, summarySheet
+    
+    ' Set up headers (starting from row 4 to leave space for logo)
     With summarySheet
-        .Range("A1").Value = "Sr. No"
-        .Range("B1").Value = "Sheet Name"
-        .Range("C1").Value = "MRP"
-        .Range("D1").Value = "OFFER PRICE"
+        .Range("A4").Value = "Sr. No"
+        .Range("B4").Value = "Sheet Name"
+        .Range("C4").Value = "MRP"
+        .Range("D4").Value = "OFFER PRICE"
         
         ' Format headers
-        With .Range("A1:D1")
+        With .Range("A4:D4")
             .Font.Bold = True
             .Font.Name = "Bookman Old Style"
             .Font.Size = 12
@@ -60,7 +63,7 @@ Sub GenerateSummary()
         .Columns("D:D").ColumnWidth = 15
     End With
     
-    summaryRow = 2
+    summaryRow = 5  ' Start from row 5 (after logo and header)
     
     ' Loop through all sheets (except SUMMARY)
     For Each dataSheet In wb.Sheets
@@ -84,7 +87,7 @@ Sub GenerateSummary()
                 
                 ' Write to summary sheet
                 With summarySheet
-                    .Cells(summaryRow, 1).Value = summaryRow - 1 ' Sr. No
+                    .Cells(summaryRow, 1).Value = summaryRow - 4 ' Sr. No (adjusted for row offset)
                     .Cells(summaryRow, 1).HorizontalAlignment = xlCenter
                     .Cells(summaryRow, 1).Font.Name = "Cambria"
                     
@@ -111,7 +114,7 @@ Sub GenerateSummary()
     Next dataSheet
     
     ' Add TOTAL MRP row
-    If summaryRow > 2 Then
+    If summaryRow > 5 Then  ' Changed from 2 to 5
         With summarySheet
             .Cells(summaryRow, 2).Value = "TOTAL MRP"
             .Cells(summaryRow, 2).Font.Bold = True
@@ -119,7 +122,7 @@ Sub GenerateSummary()
             .Cells(summaryRow, 2).Font.Size = 12
             .Cells(summaryRow, 2).Interior.Color = RGB(255, 199, 206)
             
-            .Cells(summaryRow, 3).Formula = "=SUM(C2:C" & summaryRow - 1 & ")"
+            .Cells(summaryRow, 3).Formula = "=SUM(C5:C" & summaryRow - 1 & ")"  ' Changed C2 to C5
             .Cells(summaryRow, 3).NumberFormat = "#,##0"
             .Cells(summaryRow, 3).Font.Bold = True
             .Cells(summaryRow, 3).Font.Name = "Bookman Old Style"
@@ -127,7 +130,7 @@ Sub GenerateSummary()
             .Cells(summaryRow, 3).Interior.Color = RGB(255, 199, 206)
             .Cells(summaryRow, 3).HorizontalAlignment = xlRight
             
-            .Cells(summaryRow, 4).Formula = "=SUM(D2:D" & summaryRow - 1 & ")"
+            .Cells(summaryRow, 4).Formula = "=SUM(D5:D" & summaryRow - 1 & ")"  ' Changed D2 to D5
             .Cells(summaryRow, 4).NumberFormat = "#,##0"
             .Cells(summaryRow, 4).Font.Bold = True
             .Cells(summaryRow, 4).Font.Name = "Bookman Old Style"
@@ -237,3 +240,45 @@ Function FindTotalRow(ws As Worksheet) As Long
     
     FindTotalRow = 0
 End Function
+
+Sub CopyKohlerLogo(wb As Workbook, targetSheet As Worksheet)
+    '
+    ' Copies the Kohler logo from the first data sheet to the target sheet
+    '
+    Dim sourceSheet As Worksheet
+    Dim shp As Object
+    Dim logoCopied As Boolean
+    
+    logoCopied = False
+    
+    ' Try to find Kohler logo in the first few sheets
+    For Each sourceSheet In wb.Sheets
+        If sourceSheet.Name <> "SUMMARY" Then
+            ' Look for pictures/shapes in the top area (rows 1-5)
+            For Each shp In sourceSheet.Shapes
+                If shp.Type = msoPicture Or shp.Type = msoLinkedPicture Then
+                    ' Check if the shape is in the top area
+                    If shp.Top < 100 Then
+                        ' Copy the shape
+                        shp.Copy
+                        
+                        ' Paste it in the target sheet
+                        targetSheet.Activate
+                        targetSheet.Range("A1").Select
+                        targetSheet.Paste
+                        
+                        ' Position it nicely
+                        targetSheet.Shapes(targetSheet.Shapes.Count).Top = 5
+                        targetSheet.Shapes(targetSheet.Shapes.Count).Left = 5
+                        
+                        logoCopied = True
+                        Exit For
+                    End If
+                End If
+            Next shp
+            
+            If logoCopied Then Exit For
+        End If
+    Next sourceSheet
+    
+End Sub
